@@ -12,13 +12,19 @@ sub new {
 
     my ( $class, $self ) = @_;
 
-    # Check for required parameters
-    my @required_params = qw(private_key_file client_email bucket_name);
-    foreach my $param (@required_params) {
-        unless ( exists $self->{$param} ) {
-            die "Required parameter $param missing $!";
-        }
+    # Detect authentication method and validate required parameters
+    my $has_service_account = exists $self->{private_key_file} && exists $self->{client_email};
+    my $has_oauth2 = exists $self->{client_id} && exists $self->{client_secret} && exists $self->{refresh_token};
+
+    unless ( $has_service_account || $has_oauth2 ) {
+        die "Must provide either Service Account credentials (private_key_file + client_email) or OAuth2 credentials (client_id + client_secret + refresh_token)";
     }
+
+    unless ( exists $self->{bucket_name} ) {
+        die "Required parameter bucket_name missing $!";
+    }
+
+    $self->{auth_method} = $has_service_account ? 'service_account' : 'oauth2';
 
     bless $self, $class;
 
@@ -32,7 +38,11 @@ sub _initialize {
 
     my $self = shift;
 
-    $self->{'private_key'}  = $self->_get_private_key();
+    # Only load private key for Service Account auth
+    if ( $self->{auth_method} eq 'service_account' ) {
+        $self->{'private_key'} = $self->_get_private_key();
+    }
+
     $self->{'access_token'} = $self->_authenticate();
 }
 
@@ -51,6 +61,19 @@ sub _get_private_key {
 }
 
 sub _authenticate {
+
+    my $self = shift;
+
+    if ( $self->{auth_method} eq 'service_account' ) {
+        return $self->_authenticate_service_account();
+    }
+    else {
+        return $self->_authenticate_oauth2();
+    }
+
+}
+
+sub _authenticate_service_account {
 
     my $self = shift;
 
@@ -79,7 +102,37 @@ sub _authenticate {
         $access_token = decode_json( $response->decoded_content() );
     }
     else {
-        die "Failed to authenticate to Google Cloud Storage: " . $response->status_line();
+        die "Failed to authenticate to Google Cloud Storage (Service Account): " . $response->status_line();
+    }
+    $access_token->{expire_time} = $access_token->{expires_in} + time();
+
+    return $access_token;
+
+}
+
+sub _authenticate_oauth2 {
+
+    my $self = shift;
+
+    my $url = 'https://oauth2.googleapis.com/token';
+
+    my $ua = LWP::UserAgent->new( timeout => 10 );
+
+    my $response = $ua->post(
+        $url,
+        {   grant_type    => 'refresh_token',
+            client_id     => $self->{client_id},
+            client_secret => $self->{client_secret},
+            refresh_token => $self->{refresh_token}
+        }
+    );
+
+    my $access_token;
+    if ( $response->is_success() ) {
+        $access_token = decode_json( $response->decoded_content() );
+    }
+    else {
+        die "Failed to authenticate to Google Cloud Storage (OAuth2): " . $response->status_line();
     }
     $access_token->{expire_time} = $access_token->{expires_in} + time();
 
@@ -260,23 +313,40 @@ Google::Cloud::Storage::Bucket
 =head1 SYNOPSIS
 
     # Instantiate access to an existing bucket on the Google Cloud Storage platform
+    # using Service Account authentication
 
-    my $bucket = Google::Cloud::Storage::Bucket->new( { 
+    my $bucket = Google::Cloud::Storage::Bucket->new( {
         'private_key_file' => '/etc/private/gcs.key',
         'client_email' => 'email@test.com',
         'bucket_name' => 'my_bucket'}
     );
 
-    # Get a JSON object containing the list of files 
-    
+    # OR using OAuth2 user authentication
+
+    my $bucket = Google::Cloud::Storage::Bucket->new( {
+        'client_id' => 'your_client_id',
+        'client_secret' => 'your_client_secret',
+        'refresh_token' => 'your_refresh_token',
+        'bucket_name' => 'my_bucket'}
+    );
+
+    # Get a JSON object containing the list of files
+
     my $files = $bucket->list_files;
 
 =head1 DESCRIPTION
 
-L<GOOGLE::CLOUD::STORAGE::BUCKET> allows you to perform file operations on objects 
-stored in Google Cloud Storage buckets.  It supports authentication with
-the application service account model which is documented here:
+L<GOOGLE::CLOUD::STORAGE::BUCKET> allows you to perform file operations on objects
+stored in Google Cloud Storage buckets.  It supports two authentication methods:
+
+=over
+
+=item * Service Account authentication (recommended for server-to-server)
 L<Using OAuth 2.0 for Server to Server Applications|https://developers.google.com/identity/protocols/oauth2/service-account>
+
+=item * OAuth2 user authentication (for user-delegated access)
+
+=back
 
 Under the hood, this module is using the Google Cloud Storage JSON API
 L<Cloud Storage JSON API|https://cloud.google.com/storage/docs/json_api>
@@ -286,9 +356,18 @@ L<Cloud Storage JSON API|https://cloud.google.com/storage/docs/json_api>
 
 =head2 new
 
-    my $bucket = Google::Cloud::Storage::Bucket->new( 
+    # Service Account authentication
+    my $bucket = Google::Cloud::Storage::Bucket->new(
         { 'private_key_file' => '/etc/private/gcs.key',
           'client_email' => 'email@test.com',
+          'bucket_name' => 'my_bucket'}
+    );
+
+    # OAuth2 user authentication
+    my $bucket = Google::Cloud::Storage::Bucket->new(
+        { 'client_id' => 'your_client_id',
+          'client_secret' => 'your_client_secret',
+          'refresh_token' => 'your_refresh_token',
           'bucket_name' => 'my_bucket'}
     );
 
@@ -297,6 +376,8 @@ object will store and manage an access token.  The token has a 60 minute TTL.  T
 refreshing the token automatically.
 
 =head2 Required Parameters
+
+=head3 For Service Account Authentication:
 
 =over
 
@@ -307,6 +388,28 @@ The private key to the Google Service Account.
 =item C<client_email>
 
 The client email for the Google Service Account.
+
+=item C<bucket_name>
+
+The name of the Google Service Bucket
+
+=back
+
+=head3 For OAuth2 User Authentication:
+
+=over
+
+=item C<client_id>
+
+The OAuth2 Client ID.
+
+=item C<client_secret>
+
+The OAuth2 Client Secret.
+
+=item C<refresh_token>
+
+The OAuth2 Refresh Token.
 
 =item C<bucket_name>
 

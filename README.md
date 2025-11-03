@@ -2,7 +2,10 @@
 
 ## Overview
 
-`Google::Cloud::Storage::Bucket` is a Perl module that allows you to perform file operations on objects stored in Google Cloud Storage buckets. It supports authentication using the application service account model, which is documented here: [Using OAuth 2.0 for Server to Server Applications](https://developers.google.com/identity/protocols/oauth2/service-account).
+`Google::Cloud::Storage::Bucket` is a Perl module that allows you to perform file operations on objects stored in Google Cloud Storage buckets. It supports two authentication methods:
+
+1. **Service Account authentication** (recommended for server-to-server) - documented here: [Using OAuth 2.0 for Server to Server Applications](https://developers.google.com/identity/protocols/oauth2/service-account)
+2. **OAuth2 user authentication** (for user-delegated access)
 
 This module uses the [Google Cloud Storage JSON API](https://cloud.google.com/storage/docs/json_api) under the hood.
 
@@ -18,12 +21,27 @@ cpan Google::Cloud::Storage::Bucket
 
 ### Instantiate Access to an Existing Bucket
 
+#### Using Service Account Authentication
+
 ```perl
 use Google::Cloud::Storage::Bucket;
 
 my $bucket = Google::Cloud::Storage::Bucket->new({
     'private_key_file' => '/etc/private/gcs.key',
     'client_email'     => 'email@test.com',
+    'bucket_name'      => 'my_bucket'
+});
+```
+
+#### Using OAuth2 User Authentication
+
+```perl
+use Google::Cloud::Storage::Bucket;
+
+my $bucket = Google::Cloud::Storage::Bucket->new({
+    'client_id'        => 'your_client_id',
+    'client_secret'    => 'your_client_secret',
+    'refresh_token'    => 'your_refresh_token',
     'bucket_name'      => 'my_bucket'
 });
 ```
@@ -38,20 +56,23 @@ my $files = $bucket->list_files;
 
 ### `new`
 
-```perl
-my $bucket = Google::Cloud::Storage::Bucket->new({
-    'private_key_file' => '/etc/private/gcs.key',
-    'client_email'     => 'email@test.com',
-    'bucket_name'      => 'my_bucket'
-});
-```
-
 This method creates a new bucket object and authenticates to the Google Cloud Storage platform. The object will store and manage an access token, which has a 60-minute TTL. The object will handle refreshing the token automatically.
+
+The module auto-detects which authentication method to use based on the parameters provided.
 
 ### Required Parameters
 
+#### For Service Account Authentication:
+
 - **`private_key_file`**: The private key to the Google Service Account.
 - **`client_email`**: The client email for the Google Service Account.
+- **`bucket_name`**: The name of the Google Service Bucket.
+
+#### For OAuth2 User Authentication:
+
+- **`client_id`**: The OAuth2 Client ID.
+- **`client_secret`**: The OAuth2 Client Secret.
+- **`refresh_token`**: The OAuth2 Refresh Token.
 - **`bucket_name`**: The name of the Google Service Bucket.
 
 ## Methods
