@@ -7,6 +7,9 @@ WriteMakefile(
     AUTHOR            => 'Aaron Stone <aaron@mydestination.us>',
     LICENSE           => 'perl',
     MIN_PERL_VERSION  => '5.010',
+    PM                => {
+        'Google/Cloud/Storage/Bucket.pm' => '$(INST_LIB)/Google/Cloud/Storage/Bucket.pm',
+    },
     PREREQ_PM         => {
         'JSON'              => 0,
         'JSON::WebToken'    => 0,
