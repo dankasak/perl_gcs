@@ -3,6 +3,8 @@ package Google::Cloud::Storage::Bucket;
 use strict;
 use warnings;
 
+our $VERSION = '0.02';
+
 use JSON qw(decode_json);
 use JSON::WebToken;
 use LWP::UserAgent ();
