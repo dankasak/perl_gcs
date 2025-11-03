@@ -15,11 +15,11 @@ sub new {
     my ( $class, $self ) = @_;
 
     # Detect authentication method and validate required parameters
-    my $has_service_account = exists $self->{private_key_file} && exists $self->{client_email};
+    my $has_service_account = (exists $self->{private_key_file} || exists $self->{private_key}) && exists $self->{client_email};
     my $has_oauth2 = exists $self->{client_id} && exists $self->{client_secret} && exists $self->{refresh_token};
 
     unless ( $has_service_account || $has_oauth2 ) {
-        die "Must provide either Service Account credentials (private_key_file + client_email) or OAuth2 credentials (client_id + client_secret + refresh_token)";
+        die "Must provide either Service Account credentials (private_key_file or private_key + client_email) or OAuth2 credentials (client_id + client_secret + refresh_token)";
     }
 
     unless ( exists $self->{bucket_name} ) {
@@ -42,7 +42,10 @@ sub _initialize {
 
     # Only load private key for Service Account auth
     if ( $self->{auth_method} eq 'service_account' ) {
-        $self->{'private_key'} = $self->_get_private_key();
+        # If private_key is not already set (as a string), load it from file
+        if ( !exists $self->{'private_key'} && exists $self->{'private_key_file'} ) {
+            $self->{'private_key'} = $self->_get_private_key();
+        }
     }
 
     $self->{'access_token'} = $self->_authenticate();
@@ -383,13 +386,17 @@ refreshing the token automatically.
 
 =over
 
-=item C<private_key_file>
-
-The private key to the Google Service Account.
-
 =item C<client_email>
 
 The client email for the Google Service Account.
+
+=item C<private_key>
+
+The private key as a string (can be extracted from the service account JSON file), OR
+
+=item C<private_key_file>
+
+Path to a file containing the private key.
 
 =item C<bucket_name>
 

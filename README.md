@@ -64,8 +64,9 @@ The module auto-detects which authentication method to use based on the paramete
 
 #### For Service Account Authentication:
 
-- **`private_key_file`**: The private key to the Google Service Account.
 - **`client_email`**: The client email for the Google Service Account.
+- **`private_key`**: The private key string (from JSON file), OR
+- **`private_key_file`**: Path to a file containing the private key.
 - **`bucket_name`**: The name of the Google Service Bucket.
 
 #### For OAuth2 User Authentication:
