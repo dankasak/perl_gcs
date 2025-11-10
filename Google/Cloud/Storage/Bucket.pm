@@ -9,6 +9,7 @@ use JSON qw(decode_json);
 
 #use JSON::WebToken;
 use Crypt::JWT qw(encode_jwt);
+use Crypt::PK::RSA;
 
 use LWP::UserAgent ();
 use File::Basename qw(basename);
@@ -99,6 +100,20 @@ sub _authenticate_service_account {
 #        'RS256'
 #    );
 
+#    $self->{'jwt'} = encode_jwt(
+#        payload => {
+#            iss   => $self->{'client_email'},
+#            exp   => $exp,
+#            aud   => 'https://oauth2.googleapis.com/token',
+#            scope => 'https://www.googleapis.com/auth/cloud-platform',
+#            iat   => time()
+#        },
+#        alg => 'RS256',
+#        key => \$self->{'private_key'}  # Note the backslash - pass a reference
+#    );
+
+    my $rsa_key = Crypt::PK::RSA->new(\$self->{'private_key'});
+
     $self->{'jwt'} = encode_jwt(
         payload => {
             iss   => $self->{'client_email'},
@@ -108,7 +123,7 @@ sub _authenticate_service_account {
             iat   => time()
         },
         alg => 'RS256',
-        key => \$self->{'private_key'}  # Note the backslash - pass a reference
+        key => $rsa_key
     );
 
     my $grant_string = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
