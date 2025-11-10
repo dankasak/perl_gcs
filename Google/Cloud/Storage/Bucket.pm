@@ -6,7 +6,10 @@ use warnings;
 our $VERSION = '0.02';
 
 use JSON qw(decode_json);
-use JSON::WebToken;
+
+#use JSON::WebToken;
+use Crypt::JWT;
+
 use LWP::UserAgent ();
 use File::Basename qw(basename);
 
@@ -85,15 +88,27 @@ sub _authenticate_service_account {
     my $url = 'https://oauth2.googleapis.com/token';
     my $exp = time() + 60 * 60;                        # Max ttl for token is 1 hour per Google
 
-    $self->{'jwt'} = JSON::WebToken->encode(
-        {   iss   => $self->{'client_email'},
+#    $self->{'jwt'} = JSON::WebToken->encode(
+#        {   iss   => $self->{'client_email'},
+#            exp   => $exp,
+#            aud   => 'https://oauth2.googleapis.com/token',
+#            scope => 'https://www.googleapis.com/auth/cloud-platform',
+#            iat   => time()
+#        },
+#        $self->{'private_key'},
+#        'RS256'
+#    );
+
+    $self->{'jwt'} = encode_jwt(
+        payload => {
+            iss   => $self->{'client_email'},
             exp   => $exp,
             aud   => 'https://oauth2.googleapis.com/token',
             scope => 'https://www.googleapis.com/auth/cloud-platform',
             iat   => time()
         },
-        $self->{'private_key'},
-        'RS256'
+        alg => 'RS256',
+        key => \$self->{'private_key'}  # Note the backslash - pass a reference
     );
 
     my $grant_string = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
