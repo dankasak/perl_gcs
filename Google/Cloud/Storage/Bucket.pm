@@ -8,7 +8,7 @@ our $VERSION = '0.02';
 use JSON qw(decode_json);
 
 #use JSON::WebToken;
-use Crypt::JWT;
+use Crypt::JWT qw(encode_jwt);
 
 use LWP::UserAgent ();
 use File::Basename qw(basename);
