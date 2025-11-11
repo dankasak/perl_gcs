@@ -112,7 +112,11 @@ sub _authenticate_service_account {
 #        key => \$self->{'private_key'}  # Note the backslash - pass a reference
 #    );
 
-    my $rsa_key = Crypt::PK::RSA->new(\$self->{'private_key'});
+    # Fix escaped newlines in the private key
+    my $key = $self->{'private_key'};
+    $key =~ s/\\n/\n/g;  # Replace literal \n with actual newlines
+
+    my $rsa_key = Crypt::PK::RSA->new(\$key);
 
     $self->{'jwt'} = encode_jwt(
         payload => {
