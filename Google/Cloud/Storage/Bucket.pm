@@ -7,7 +7,7 @@ our $VERSION = '0.02';
 
 use JSON qw(decode_json);
 
-#use JSON::WebToken;
+use JSON;
 use Crypt::JWT qw(encode_jwt);
 use Crypt::PK::RSA;
 
@@ -89,38 +89,31 @@ sub _authenticate_service_account {
     my $url = 'https://oauth2.googleapis.com/token';
     my $exp = time() + 60 * 60;                        # Max ttl for token is 1 hour per Google
 
-#    $self->{'jwt'} = JSON::WebToken->encode(
-#        {   iss   => $self->{'client_email'},
-#            exp   => $exp,
-#            aud   => 'https://oauth2.googleapis.com/token',
-#            scope => 'https://www.googleapis.com/auth/cloud-platform',
-#            iat   => time()
-#        },
-#        $self->{'private_key'},
-#        'RS256'
-#    );
+    # In _get_access_token method or in the constructor:
+    my $exp = time() + 3600;
 
-#    $self->{'jwt'} = encode_jwt(
-#        payload => {
-#            iss   => $self->{'client_email'},
-#            exp   => $exp,
-#            aud   => 'https://oauth2.googleapis.com/token',
-#            scope => 'https://www.googleapis.com/auth/cloud-platform',
-#            iat   => time()
-#        },
-#        alg => 'RS256',
-#        key => \$self->{'private_key'}  # Note the backslash - pass a reference
-#    );
+    # Check if private_key is JSON and parse it
+    my $key;
+    my $client_email = $self->{'client_email'};
 
-    # Fix escaped newlines in the private key
-    my $key = $self->{'private_key'};
-    $key =~ s/\\n/\n/g;  # Replace literal \n with actual newlines
+    if ($self->{'private_key'} =~ /^\s*\{/) {
+        # It's a JSON service account file
+        my $json_data = decode_json($self->{'private_key'});
+        $key = $json_data->{'private_key'};
+        $client_email = $json_data->{'client_email'} unless $client_email;
+    } else {
+        # It's already just the key
+        $key = $self->{'private_key'};
+    }
+
+    # Fix escaped newlines
+    $key =~ s/\\n/\n/g;
 
     my $rsa_key = Crypt::PK::RSA->new(\$key);
 
     $self->{'jwt'} = encode_jwt(
         payload => {
-            iss   => $self->{'client_email'},
+            iss   => $client_email,
             exp   => $exp,
             aud   => 'https://oauth2.googleapis.com/token',
             scope => 'https://www.googleapis.com/auth/cloud-platform',
