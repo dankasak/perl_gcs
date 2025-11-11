@@ -129,6 +129,9 @@ sub _authenticate_service_account {
 
     my $response = $ua->post( $url, { grant_type => "$grant_string", assertion => $self->{'jwt'} } );
 
+#    print STDERR "Token exchange status: " . $response->code . "\n";
+#    print STDERR "Token exchange response: " . $response->content . "\n";
+
     my $access_token;
     if ( $response->is_success() ) {
         $access_token = decode_json( $response->decoded_content() );
@@ -274,6 +277,116 @@ sub upload_file {
     else {
         die 'Upload Failed: ' . $response->status_line();
     }
+}
+
+sub upload_file_multipart {
+
+    my ( $self, $bucket_name , $source, $content_type, $destination_key , $chunk_size_mb ) = @_;
+
+    my $access_token = $self->{'access_token'}->{'access_token'};
+
+    my $result = upload_file_resumable(
+        $self->{'access_token'}->{'access_token'},
+        $bucket_name,
+        $destination_key,
+        $source,
+        $chunk_size_mb * 1024 * 1024
+    );
+    
+    return $result;
+
+}
+
+sub upload_file_resumable {
+
+    my ($access_token, $bucket, $object_name, $source_file, $chunk_size) = @_;
+    
+    $chunk_size ||= 5 * 1024 * 1024;  # Default 5MB chunks
+    
+    my $ua = LWP::UserAgent->new();
+    
+    # Debug: check what we're sending
+#    print STDERR "Bucket: $bucket\n";
+#    print STDERR "Object: $object_name\n";
+#    print STDERR "Token (first 30): " . substr($access_token, 0, 30) . "...\n";
+
+    # Step 1: Initiate resumable upload
+    my $init_url = "https://storage.googleapis.com/upload/storage/v1/b/$bucket/o?uploadType=resumable";
+#    print STDERR "Init URL: $init_url\n";
+    
+    my $init_request = HTTP::Request->new(
+        POST => $init_url,
+        [
+            'Authorization' => "Bearer $access_token",
+            'Content-Type' => 'application/json',
+        ],
+        encode_json({
+            name => $object_name,
+        })
+    );
+    
+#    print STDERR "Request headers:\n";
+#    $init_request->headers->scan(sub { print STDERR "  $_[0]: $_[1]\n" });
+#    print STDERR "Request body: " . $init_request->content . "\n";
+
+    my $init_response = $ua->request($init_request);
+    
+#    print STDERR "Response status: " . $init_response->code . "\n";
+#    print STDERR "Response body: " . $init_response->content . "\n";
+
+    unless ($init_response->is_success) {
+        die "Failed to initiate resumable upload: " . $init_response->status_line;
+    }
+    
+    my $session_uri = $init_response->header('Location');
+    
+    unless ($session_uri) {
+        die "No session URI returned from initiation";
+    }
+    
+#    print "Resumable upload session created: $session_uri\n";
+    
+    # Step 2: Upload file in chunks
+    open my $fh, '<:raw', $source_file or die "Can't open $source_file: $!";
+    
+    my $file_size = -s $source_file;
+    my $bytes_uploaded = 0;
+    my $buffer;
+    
+    while (my $bytes_read = sysread($fh, $buffer, $chunk_size)) {
+        my $start = $bytes_uploaded;
+        my $end = $bytes_uploaded + $bytes_read - 1;
+        
+        my $upload_request = HTTP::Request->new(
+            PUT => $session_uri,
+            [
+                'Content-Length' => $bytes_read,
+                'Content-Range' => "bytes $start-$end/$file_size",
+            ],
+            $buffer
+        );
+        
+        my $upload_response = $ua->request($upload_request);
+        
+        if ($upload_response->code == 308) {
+            # Resume incomplete - continue
+            print "Uploaded bytes $start-$end / $file_size\n";
+        } elsif ($upload_response->is_success) {
+            # Upload complete
+            print "Upload completed successfully!\n";
+            close $fh;
+            return decode_json($upload_response->content);
+        } else {
+            close $fh;
+            die "Upload failed at byte $start: " . $upload_response->status_line;
+        }
+        
+        $bytes_uploaded += $bytes_read;
+    }
+    
+    close $fh;
+    return undef;
+
 }
 
 sub download_file {
